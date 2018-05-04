@@ -206,7 +206,7 @@ class InstaloaderContext:
                 return sliding_window if untracked_queries else 0
             current_time = time.monotonic()
             self.query_timestamps = list(filter(lambda t: t > current_time - sliding_window, self.query_timestamps))
-            if len(self.query_timestamps) < 20 and not untracked_queries:
+            if len(self.query_timestamps) < 25 and not untracked_queries:
                 return 0
             return round(min(self.query_timestamps) + sliding_window - current_time) + 6
         is_graphql_query = 'query_hash' in params and 'graphql/query' in path
