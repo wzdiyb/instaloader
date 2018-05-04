@@ -659,7 +659,9 @@ class Instaloader:
                          download_stories: bool = False, download_stories_only: bool = False,
                          post_filter: Optional[Callable[[Post], bool]] = None,
                          storyitem_filter: Optional[Callable[[StoryItem], bool]] = None) -> None:
-        """Download one profile"""
+        """Download one profile
+
+        .. note: deprecated in favor of :meth:`~Instaloader.download_profiles`."""
 
         # Get profile main page json
         # check if profile does exist or name has changed since last download
@@ -718,6 +720,85 @@ class Instaloader:
                 downloaded = self.download_post(post, target=profile_name)
                 if fast_update and not downloaded:
                     break
+
+    def download_profiles(self, profiles: List[Profile], profile_pic: bool = True, profile_pic_only: bool = False,
+                          fast_update: bool = False,
+                          stories: bool = False, stories_only: bool = False,
+                          post_filter: Optional[Callable[[Post], bool]] = None,
+                          storyitem_filter: Optional[Callable[[StoryItem], bool]] = None) -> None:
+        """Download a list of profiles, with their profile pictures, stories and posts."""
+        if len(profiles) > 1:
+            self.context.log("Downloading {} profiles: {}"
+                             .format(len(profiles), ' '.join(profile.username for profile in profiles)))
+
+        # Download profile pictures
+        if profile_pic or profile_pic_only:
+            for profile in profiles:
+                with self.context.error_catcher("Download profile picture of {}".format(profile.username)):
+                    self.download_profilepic(profile)
+
+        # Download user stories if required
+        if profiles and (stories or stories_only):
+            with self.context.error_catcher("Download user stories"):
+                def _get_stories():
+                    idlist = []
+                    try:
+                        for story in self.get_stories([profile.userid for profile in profiles]):
+                            idlist.append(story.owner_id)
+                            yield story
+                    except InstaloaderException as err:
+                        self.context.log("{} - trying stories individually.".format(err))
+                        for p in profiles:
+                            if p.userid not in idlist:
+                                yield from self.get_stories([p.userid])
+
+                for user_story in _get_stories():
+                    name = user_story.owner_username
+                    self.context.log("Retrieving stories from profile {}.".format(name))
+                    totalcount = user_story.itemcount
+                    for count, item in enumerate(user_story.get_items()):
+                        if storyitem_filter is not None and not storyitem_filter(item):
+                            self.context.log("<{} skipped>".format(item), flush=True)
+                            continue
+                        self.context.log("[%3i/%3i] " % (count, totalcount), end="", flush=True)
+                        with self.context.error_catcher("Download story from user {}".format(name)):
+                            downloaded = self.download_storyitem(item, name)
+                            if fast_update and not downloaded:
+                                break
+
+        # Iterate over pictures and download them
+        if not (stories_only or profile_pic_only):
+            for profile in profiles:
+                with self.context.error_catcher("Download posts from {}".format(profile)):
+                    # Catch some errors
+                    if profile.is_private:
+                        if not self.context.is_logged_in:
+                            raise LoginRequiredException("profile %s requires login" % profile.username)
+                        if not profile.followed_by_viewer and self.context.username != profile.username:
+                            raise PrivateProfileNotFollowedException("private but not followed.")
+                    else:
+                        if self.context.is_logged_in and not (stories or stories_only):
+                            self.context.log("profile %s could also be downloaded anonymously." % profile.username)
+
+                    self.context.log("Retrieving posts from profile {}.".format(profile.username))
+                    totalcount = profile.mediacount
+                    for count, post in enumerate(profile.get_posts()):
+                        self.context.log("[%3i/%3i] " % (count, totalcount), end="", flush=True)
+                        if post_filter is not None and not post_filter(post):
+                            self.context.log("<{} skipped>".format(post))
+                            continue
+                        with self.context.error_catcher("Download {} from {}".format(post, profile)):
+                            downloaded = self.download_post(post, target=profile.username)
+                            if fast_update and not downloaded:
+                                break
+
+        # Save metadata as JSON if desired.
+        if self.save_metadata is not False:
+            for profile in profiles:
+                json_filename = '{0}/{1}_{2}'.format(self.dirname_pattern.format(profile=profile.username,
+                                                                                 target=profile.username),
+                                                     profile.username, profile.userid)
+                self.save_metadata_json(json_filename, profile)
 
     def interactive_login(self, username: str) -> None:
         """Logs in and internally stores session, asking user for password interactively.

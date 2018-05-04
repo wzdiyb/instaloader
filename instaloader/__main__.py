@@ -120,9 +120,7 @@ def _main(instaloader: Instaloader, targetlist: List[str],
             with instaloader.context.error_catcher(target):
                 if target[0] == '@':
                     instaloader.context.log("Retrieving followees of %s..." % target[1:])
-                    profile = Profile.from_username(instaloader.context, target[1:])
-                    followees = profile.get_followees()
-                    profiles.update([followee.username for followee in followees])
+                    profiles.update(instaloader.check_profile_id(target[1:].lower()).get_followees())
                 elif target[0] == '#':
                     instaloader.download_hashtag(hashtag=target[1:], max_count=max_count, fast_update=fast_update,
                                                  post_filter=post_filter)
@@ -135,26 +133,20 @@ def _main(instaloader: Instaloader, targetlist: List[str],
                     instaloader.download_saved_posts(fast_update=fast_update, max_count=max_count,
                                                      post_filter=post_filter)
                 else:
-                    profiles.add(target)
-        if len(profiles) > 1:
-            instaloader.context.log("Downloading {} profiles: {}".format(len(profiles), ' '.join(profiles)))
-        # Iterate through profiles list and download them
-        for target in profiles:
-            with instaloader.context.error_catcher(target):
-                try:
-                    instaloader.download_profile(target, profile_pic, profile_pic_only, fast_update,
-                                                 stories, stories_only, post_filter=post_filter,
-                                                 storyitem_filter=storyitem_filter)
-                except ProfileNotExistsException as err:
-                    if not instaloader.context.is_logged_in:
-                        instaloader.context.log(err)
-                        instaloader.context.log("Trying again anonymously, helps in case you are just blocked.")
-                        with instaloader.anonymous_copy() as anonymous_loader:
-                            with instaloader.context.error_catcher():
-                                anonymous_loader.download_profile(target, profile_pic, profile_pic_only,
-                                                                  fast_update, post_filter=post_filter)
-                    else:
-                        raise
+                    try:
+                        profiles.add(instaloader.check_profile_id(target.lower()))
+                    except ProfileNotExistsException:
+                        if instaloader.context.is_logged_in:
+                            with instaloader.anonymous_copy() as anonymous_loader:
+                                # Obviously this profile blocked the viewer - retry check_profile_id anonymously.
+                                profile = anonymous_loader.check_profile_id(target.lower())
+                                profiles.add(profile)
+                                instaloader.context.add("profile {} will be downloaded anonymously."
+                                                        .format(profile.username))
+                        else:
+                            raise
+        instaloader.download_profiles(list(profiles), profile_pic, profile_pic_only, fast_update,
+                                      stories, stories_only, post_filter, storyitem_filter)
     except KeyboardInterrupt:
         print("\nInterrupted by user.", file=sys.stderr)
     # Save session if it is useful
