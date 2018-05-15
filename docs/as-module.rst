@@ -168,8 +168,6 @@ Exceptions
 
 .. autoexception:: ProfileNotExistsException
 
-.. autoexception:: ProfileHasNoPicsException
-
 .. autoexception:: PrivateProfileNotFollowedException
 
 .. autoexception:: LoginRequiredException

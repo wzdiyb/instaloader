@@ -21,10 +21,6 @@ class ProfileNotExistsException(InstaloaderException):
     pass
 
 
-class ProfileHasNoPicsException(InstaloaderException):
-    pass
-
-
 class PrivateProfileNotFollowedException(InstaloaderException):
     pass
 

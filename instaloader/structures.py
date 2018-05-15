@@ -399,27 +399,23 @@ class Profile:
 
     @classmethod
     def from_id(cls, context: InstaloaderContext, profile_id: int):
-        """Create a Profile instance from a given userid. If possible, use :meth:`Profile.from_username`
-        or constructor directly rather than this method, since it does many requests.
+        """Create a Profile instance from a given userid.
 
         :param context: :attr:`Instaloader.context`
         :param profile_id: userid
-        :raises: :class:`ProfileNotExistsException`, :class:`ProfileHasNoPicsException`
+        :raises: :class:`ProfileNotExistsException`
         """
-        data = context.graphql_query("472f257a40c653c64c666ce877d59d2b",
-                                     {'id': str(profile_id), 'first': 1},
-                                     rhx_gis=context.root_rhx_gis)['data']['user']
-        if data:
-            data = data["edge_owner_to_timeline_media"]
-        else:
-            raise ProfileNotExistsException("No profile found, the user may have blocked you (ID: " +
-                                            str(profile_id) + ").")
-        if not data['edges']:
-            if data['count'] == 0:
-                raise ProfileHasNoPicsException("Profile with ID {0}: no pics found.".format(str(profile_id)))
-            else:
-                raise LoginRequiredException("Login required to determine username (ID: " + str(profile_id) + ").")
-        return Post(context, data['edges'][0]['node']).owner_profile
+        # pylint:disable=protected-access
+        profile = Profile(context, {'id': profile_id, 'username': None})
+        try:
+            profile._node = profile._iphone_struct.copy()
+        except QueryReturnedNotFoundException as err:
+            raise ProfileNotExistsException("Profile ID {} does not exist.".format(profile_id)) from err
+        profile._node['id'] = profile_id
+        profile._node['edge_owner_to_timeline_media'] = {'count': profile._iphone_struct['media_count']}
+        profile._node['edge_followed_by'] = {'count': profile._iphone_struct['follower_count']}
+        profile._node['edge_follow'] = {'count': profile._iphone_struct['following_count']}
+        return profile
 
     def _asdict(self):
         json_node = self._node.copy()
